@@ -2,7 +2,8 @@
 #include <sys/mman.h> // 内存映射与共享内存接口（mmap/munmap、PROT_/MAP_、shm_open 等）
 #include <sys/stat.h> // 文件状态与权限常量/结构（stat、S_IRUSR 等）
 #include <fcntl.h> // 文件描述符控制与打开标志（open、O_CREAT/O_RDWR、fcntl）
-#include <cstring> // C 字符/内存函数（memcpy/memset/strcmp/strlen）
+#include <cerrno> // errno 和错误码（EOWNERDEAD 等）
+#include <cstring> // C 字符/内存函数（memcpy/memset/strcmp/strlen/strerror）
 #include <cstdint> // 固定宽度整数类型（uint32_t、uint64_t 等）
 #include <cstdio> // C 标准 I/O（printf、FILE*、perror）
 #include <cstdlib> // 通用工具（malloc/free、exit、atoi、size_t 等）
@@ -17,10 +18,20 @@
 // HEADER | BUCKETS | NODES | PAYLOAD
 // 定义共享内存的规范化布局，头部记录元信息，桶区存每个哈希桶的链表头索引，节点区存键值元数据与链，负载区存实际 key/val 字节。
 
-static constexpr uint32_t EMPTY_INDEX = 0xFFFFFFFFu; // 表示“空/无”索引（如桶为空、链尾））；选最大值避免与合法索引冲突
+static constexpr uint32_t EMPTY_INDEX = 0xFFFFFFFFu; // 表示"空/无"索引（如桶为空、链尾））；选最大值避免与合法索引冲突
 static constexpr uint32_t MAGIC = 0x4C4D4252; // 'LMBR' 魔数签名 用于在打开共享内存时校验格式是否正确、数据是否被污染或未初始化
 static constexpr size_t DEFAULT_N_BUCKETS = 1 << 12; // 4096
 static constexpr size_t DEFAULT_N_NODES = 1 << 16;   // 65536 默认桶数量与节点容量（取2的幂便于哈希分布与潜在按位与取模优化）
+
+// 安全限制常量，防止恶意或错误输入导致资源耗尽
+static constexpr size_t MAX_KEY_LEN = 1 << 16;      // 64KB - key 最大长度
+static constexpr size_t MAX_VAL_LEN = 1 << 28;      // 256MB - value 最大长度
+static constexpr size_t MAX_TOTAL_SIZE = 1ULL << 32; // 4GB - 共享内存最大尺寸
+static constexpr size_t MAX_BUCKETS = 1 << 24;      // 16M - 最大桶数
+static constexpr size_t MAX_NODES = 1 << 24;        // 16M - 最大节点数
+
+// CAS 循环最大重试次数，防止高竞争下的死循环
+static constexpr uint32_t MAX_CAS_RETRIES = 10000;  // 最大重试次数
 
 // alignment helper
 // align_up(x, a)将数值 x 向上对齐到 a 的倍数：若已对齐返回x，否则返回下一个倍数。
@@ -96,9 +107,27 @@ bool atomic_cas_u32(uint32_t* addr, uint32_t expected, uint32_t desired) {
 
 // Create or open a shared memory mapping with a canonical layout
 SharedShm create_or_open_shm(const char* name, size_t n_buckets = DEFAULT_N_BUCKETS, size_t n_nodes = DEFAULT_N_NODES, size_t payload_size = (1<<24)) {
+    // 输入验证：检查共享内存名称
+    if (!name || name[0] == '\0') {
+        throw std::runtime_error("Invalid shared memory name: nullptr or empty");
+    }
+
+    // 输入验证：检查参数范围，防止资源耗尽
+    if (n_buckets == 0 || n_buckets > MAX_BUCKETS) {
+        throw std::runtime_error("Invalid n_buckets: must be in range [1, " + std::to_string(MAX_BUCKETS) + "]");
+    }
+    if (n_nodes == 0 || n_nodes > MAX_NODES) {
+        throw std::runtime_error("Invalid n_nodes: must be in range [1, " + std::to_string(MAX_NODES) + "]");
+    }
+    if (payload_size == 0 || payload_size > MAX_TOTAL_SIZE) {
+        throw std::runtime_error("Invalid payload_size: must be in range [1, " + std::to_string(MAX_TOTAL_SIZE) + "]");
+    }
+
     bool need_init = false;
     int fd = shm_open(name, O_RDWR | O_CREAT, 0666); // 获取fd
-    if (fd < 0) throw std::runtime_error("shm_open failed");
+    if (fd < 0) {
+        throw std::runtime_error(std::string("shm_open failed for '") + name + "': " + strerror(errno));
+    }
 
     // compute sizes 计算各段对齐后的大小
     size_t header_size = align_up(sizeof(Header), 64);
@@ -106,21 +135,44 @@ SharedShm create_or_open_shm(const char* name, size_t n_buckets = DEFAULT_N_BUCK
     size_t nodes_size = align_up(sizeof(Node) * n_nodes, 64);
     size_t payload_area_size = align_up(payload_size, 4096);
 
-    // 求出total_size，若现有大小不足则 ftruncate 扩容并标记 need_init。
+    // 求出total_size，并检查整数溢出
     size_t total_size = header_size + buckets_size + nodes_size + payload_area_size;
 
+    // 整数溢出检查：每次加法后检查是否变小（溢出回绕）
+    if (total_size < header_size || total_size < buckets_size ||
+        total_size < nodes_size || total_size < payload_area_size) {
+        close(fd);
+        throw std::runtime_error("Integer overflow when calculating total_size");
+    }
+
+    // 检查总大小是否超过限制
+    if (total_size > MAX_TOTAL_SIZE) {
+        close(fd);
+        throw std::runtime_error("Total size " + std::to_string(total_size) +
+                                 " exceeds maximum " + std::to_string(MAX_TOTAL_SIZE));
+    }
+
     struct stat st;
-    if (fstat(fd, &st) == -1) throw std::runtime_error("fstat failed");
+    if (fstat(fd, &st) == -1) {
+        close(fd);
+        throw std::runtime_error(std::string("fstat failed: ") + strerror(errno));
+    }
     if ((size_t)st.st_size < total_size) {
         // need to expand
-        if (ftruncate(fd, total_size) == -1) throw std::runtime_error("ftruncate failed");
+        if (ftruncate(fd, total_size) == -1) {
+            close(fd);
+            throw std::runtime_error(std::string("ftruncate failed: ") + strerror(errno));
+        }
         need_init = true;
     }
 
     // 随后 mmap映射，若需要初始化或魔数不匹配 则整体清零、填充头部字段（区域偏移/容量/游标/generation等）、
-    // 将所有桶置 EMPTY_INDEX，并初始化“进程共享”的 pthread 互斥量（Linux 下可设为robust）。
+    // 将所有桶置 EMPTY_INDEX，并初始化"进程共享"的 pthread 互斥量（Linux 下可设为robust）。
     void* base = mmap(nullptr, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (base == MAP_FAILED) throw std::runtime_error("mmap failed");
+    if (base == MAP_FAILED) {
+        close(fd);
+        throw std::runtime_error(std::string("mmap failed: ") + strerror(errno));
+    }
 
     Header* hdr = reinterpret_cast<Header*>((char*)base);
     if (need_init || hdr->magic != MAGIC) {
@@ -164,8 +216,26 @@ SharedShm create_or_open_shm(const char* name, size_t n_buckets = DEFAULT_N_BUCK
 
 //用 hdr->total_size 调用 munmap 解除整块映射，再 close fd；调用后s.base/s.hdr 都失效；不会删除命名共享内存（未 shm_unlink）。
 void close_shm(SharedShm& s) {
-    munmap(s.base, s.hdr->total_size);
-    close(s.fd);
+    // 防止 double free：检查资源是否有效
+    if (s.base && s.base != MAP_FAILED) {
+        size_t total_size = s.hdr ? s.hdr->total_size : 0;
+        if (total_size > 0) {
+            if (munmap(s.base, total_size) == -1) {
+                // munmap 失败，记录错误但继续清理
+                perror("munmap failed");
+            }
+        }
+        s.base = nullptr;  // 标记为已释放
+        s.hdr = nullptr;
+    }
+
+    // 关闭文件描述符
+    if (s.fd >= 0) {
+        if (close(s.fd) == -1) {
+            perror("close fd failed");
+        }
+        s.fd = -1;  // 标记为已关闭
+    }
 }
 
 // --- simple helpers ---
@@ -191,33 +261,68 @@ uint32_t alloc_node_index(SharedShm& s) {
 }
 
 // allocate payload (bump pointer)
-// PAYLOAD 段的原子“bump 指针”分配器：
-// 用 fetch_add 把 payload_alloc_off增加到按 8 字节对齐后的大小，并返回旧值作为本次分配起点；
+// PAYLOAD 段的原子"bump 指针"分配器：
+// 使用 CAS 循环实现先检查后分配，避免在失败时泄漏空间
 // payload_capacity 通过total_size - payload_area_off 计算，偏移均为相对地址，进程/线程安全。
-// 注意点：越界判断应使用对齐后的大小而不是 len（否则可能放过边界），且 fetch_add在失败分支不会回滚会导致指针前移（造成空间“泄漏”）；
-// base_off 变量未使用；另外 Node 中offset 为 uint32，单个 payload 最大约 4 GiB。
 uint64_t alloc_payload(SharedShm& s, size_t len) {
-    uint64_t base_off = s.hdr->payload_alloc_off;
-    uint64_t new_off = __atomic_fetch_add(&s.hdr->payload_alloc_off, (uint64_t)align_up(len, 8), __ATOMIC_SEQ_CST);
-    // ensure not overflow
-    uint64_t payload_capacity = s.hdr->total_size - s.hdr->payload_area_off;
-    if (new_off + len > payload_capacity) {
-        return UINT64_MAX; // indicate failure
+    // 输入验证：检查长度合理性
+    if (len == 0 || len > MAX_VAL_LEN) {
+        return UINT64_MAX;
     }
-    return new_off;
+
+    uint64_t payload_capacity = s.hdr->total_size - s.hdr->payload_area_off;
+    uint64_t aligned_len = align_up(len, 8);
+
+    // 使用 CAS 循环实现先检查后分配，防止空间泄漏
+    // 添加重试计数，防止高竞争下的死循环
+    for (uint32_t retries = 0; retries < MAX_CAS_RETRIES; ++retries) {
+        uint64_t current_off = __atomic_load_n(&s.hdr->payload_alloc_off, __ATOMIC_SEQ_CST);
+
+        // 先检查：是否有足够空间
+        if (current_off + aligned_len > payload_capacity) {
+            return UINT64_MAX; // 空间不足，失败但不泄漏
+        }
+
+        // 再分配：尝试 CAS 更新
+        uint64_t new_off = current_off + aligned_len;
+        if (__atomic_compare_exchange_n(&s.hdr->payload_alloc_off,
+                                        &current_off, new_off,
+                                        false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+            // CAS 成功，返回分配的起始偏移
+            return current_off;
+        }
+        // CAS 失败，其他线程抢先了，重试
+    }
+
+    // 达到最大重试次数，竞争过于激烈
+    return UINT64_MAX;
 }
 
 // insert key/value (writer holds writer_mutex)
 // 串行化写入（进程共享 pthread 互斥）向哈希桶链表头插入一条新 KV，并用代数generation 实现读侧无锁一致性检测。
 bool insert_kv(SharedShm& s, const uint8_t* key, size_t key_len, const uint8_t* val, size_t val_len) {
+    // 输入验证：检查空指针和长度
+    if (!key || !val) {
+        return false; // 空指针，拒绝
+    }
+    if (key_len == 0 || key_len > MAX_KEY_LEN) {
+        return false; // key 长度无效
+    }
+    if (val_len == 0 || val_len > MAX_VAL_LEN) {
+        return false; // value 长度无效
+    }
+
     // trivial lock for writers 加锁
     int lockRes = pthread_mutex_lock(&s.hdr->writer_mutex);
     if (lockRes == EOWNERDEAD) {
 #ifdef __linux__
         // recover mutex state if writer died holding it - mark consistent
         pthread_mutex_consistent(&s.hdr->writer_mutex);
+        // 记录恢复事件（可选：生产环境应记录日志）
 #endif
     } else if (lockRes != 0) {
+        // 锁获取失败，记录错误码
+        // fprintf(stderr, "pthread_mutex_lock failed: %d\n", lockRes);
         return false;
     }
 
@@ -228,10 +333,12 @@ bool insert_kv(SharedShm& s, const uint8_t* key, size_t key_len, const uint8_t* 
     uint32_t bucket = (uint32_t)(hash % s.hdr->n_buckets);
     uint32_t* bucket_ptr = reinterpret_cast<uint32_t*>((char*)s.base + s.hdr->bucket_area_off) + bucket;
 
-    // allocate payload 在 payload 段按“bump 指针”各分配key/val 空间并拷贝字节
+    // allocate payload 在 payload 段按"bump 指针"各分配key/val 空间并拷贝字节
     uint64_t key_payload_off = alloc_payload(s, key_len);
     uint64_t val_payload_off = alloc_payload(s, val_len);
     if (key_payload_off == UINT64_MAX || val_payload_off == UINT64_MAX) {
+        // 分配失败，需要回滚 generation 避免读者看到不一致状态
+        __atomic_fetch_add(&s.hdr->generation, 1ULL, __ATOMIC_SEQ_CST);
         pthread_mutex_unlock(&s.hdr->writer_mutex);
         return false;
     }
@@ -244,6 +351,8 @@ bool insert_kv(SharedShm& s, const uint8_t* key, size_t key_len, const uint8_t* 
     // allocate node 分配节点索引
     uint32_t node_idx = alloc_node_index(s);
     if (node_idx == EMPTY_INDEX) {
+        // 节点容量耗尽，回滚 generation
+        __atomic_fetch_add(&s.hdr->generation, 1ULL, __ATOMIC_SEQ_CST);
         pthread_mutex_unlock(&s.hdr->writer_mutex);
         return false;
     }
@@ -262,13 +371,24 @@ bool insert_kv(SharedShm& s, const uint8_t* key, size_t key_len, const uint8_t* 
     nodes[node_idx] = tmp;
 
     // now insert node at bucket head (CAS loop) CAS将节点挂到对应桶头
-    while (true) {
+    // 添加重试计数，防止死循环
+    bool cas_success = false;
+    for (uint32_t retries = 0; retries < MAX_CAS_RETRIES; ++retries) {
         uint32_t old_head = __atomic_load_n(bucket_ptr, __ATOMIC_SEQ_CST);
         nodes[node_idx].next_index = old_head;
         // perform CAS on bucket entry
         if (atomic_cas_u32(bucket_ptr, old_head, node_idx)) {
+            cas_success = true;
             break;
         }
+    }
+
+    // CAS 失败检查
+    if (!cas_success) {
+        // 达到最大重试次数，放弃插入，回滚 generation
+        __atomic_fetch_add(&s.hdr->generation, 1ULL, __ATOMIC_SEQ_CST);
+        pthread_mutex_unlock(&s.hdr->writer_mutex);
+        return false;
     }
 
     // bump generation after modification (optional) generation++（发布新版本）
@@ -280,6 +400,11 @@ bool insert_kv(SharedShm& s, const uint8_t* key, size_t key_len, const uint8_t* 
 
 // lookup (reader, without locking; uses generation to detect races)
 bool lookup_kv(SharedShm& s, const uint8_t* key, size_t key_len, uint8_t* out_buf, size_t& out_len) {
+    // 输入验证：检查空指针和长度
+    if (!key || key_len == 0 || key_len > MAX_KEY_LEN) {
+        return false;
+    }
+
     uint64_t g1 = __atomic_load_n(&s.hdr->generation, __ATOMIC_SEQ_CST); // 读取generation记为g1
 
     uint64_t h = simple_hash(key, key_len);// 计算桶
@@ -289,15 +414,31 @@ bool lookup_kv(SharedShm& s, const uint8_t* key, size_t key_len, uint8_t* out_bu
     uint32_t idx = __atomic_load_n(bucket_ptr, __ATOMIC_SEQ_CST); // 原子读桶头索引
     Node* nodes = s.node_array();
     uint8_t* payloadBase = s.payload_base();
+    uint64_t payload_capacity = s.hdr->total_size - s.hdr->payload_area_off;
 
     // 遍历列表：将节点拷贝到本地快照n，比较 key_len 与 payload 中的 key
     while (idx != EMPTY_INDEX) {
+        // 边界检查：索引是否合法
+        if (idx >= s.hdr->n_nodes) {
+            return false; // 索引越界，数据损坏
+        }
+
         Node n = nodes[idx]; // copy snapshot
         if (n.flags & 1) { // active
             if (n.key_len == key_len) {
+                // 边界检查：key 偏移和长度是否在 payload 范围内
+                if (n.key_off + n.key_len > payload_capacity) {
+                    return false; // key 数据越界
+                }
+
                 if (memcmp(payloadBase + n.key_off, key, key_len) == 0) {
+                    // 边界检查：value 偏移和长度是否在 payload 范围内
+                    if (n.val_off + n.val_len > payload_capacity) {
+                        return false; // value 数据越界
+                    }
+
                     // found 找到即根据 out_buf/out_len 决定是否拷贝value
-                    if (out_buf && out_len >= n.val_len) { 
+                    if (out_buf && out_len >= n.val_len) {
                         memcpy(out_buf, payloadBase + n.val_off, n.val_len);
                         out_len = n.val_len;
                     } else {
@@ -316,7 +457,7 @@ bool lookup_kv(SharedShm& s, const uint8_t* key, size_t key_len, uint8_t* out_bu
         idx = n.next_index;
     }
     uint64_t g2 = __atomic_load_n(&s.hdr->generation, __ATOMIC_SEQ_CST);// 再读一次generation记为g2
-    if (g1 == g2) return false  // 未找到
+    if (g1 == g2) return false;  // 未找到
     // else indicates concurrent change - caller should retry 并发修改，建议重试
     return false;
 }
