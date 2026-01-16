@@ -1,0 +1,168 @@
+# SharedMemory Monorepo - .gitignore
+
+# =============================================================================
+# Node / React Native
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+.pnp.js
+
+# React Native build outputs
+react-native/ios/build/
+react-native/android/build/
+react-native/android/app/build/
+react-native/android/.gradle/
+
+# React Native metro
+react-native/.metro-health-check*
+
+# =============================================================================
+# Flutter / Dart
+# =============================================================================
+.build/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+/build/
+flutter_*.log
+
+# Flutter analysis
+.analysis_options_cache
+
+# =============================================================================
+# iOS / macOS
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# iOS CocoaPods
+**/ios/Pods/
+**/ios/Podfile.lock
+**/ios/*.xcworkspace
+**/ios/*.xcworkspace/xcuserdata
+**/ios/*.xcodeproj/xcuserdata/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+
+# iOS build artifacts
+**/ios/build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# =============================================================================
+# Android
+# =============================================================================
+*.iml
+.gradle/
+local.properties
+.android/
+**/android/.gradle/
+**/android/captures/
+**/android/app/release/
+
+# =============================================================================
+# IDE
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# =============================================================================
+# Test Results & Coverage
+# =============================================================================
+coverage/
+*.lcov
+.nyc_output/
+
+# =============================================================================
+# Lock Files (regeneratable)
+# =============================================================================
+package-lock.json
+pubspec.lock
+Podfile.lock
+Package.resolved
+yarn.lock
+
+# =============================================================================
+# Documentation & Logs
+# =============================================================================
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# =============================================================================
+# Temporary Files
+# =============================================================================
+.tmp/
+temp/
+tmp/
+*.tmp
+*.bak
+*.backup
+
+# =============================================================================
+# OS Generated Files
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# Build & Distribution
+#=============
+dist/
+build/
+out/
+target/
+
+# =============================================================================
+# Environment & Secrets
+# =============================================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# =============================================================================
+# Benchmark & Test Data (Optional - uncomment if you don't want to track)
+# =============================================================================
+# react-native/ios/TestData/*.json
+# flutter/packages/shm_proxy/ios/TestData/*.json
+# **/benchmark_results.json
+
+# =============================================================================
+# Project-Specific
+# =============================================================================
+# Old C++ files from original repo
+shm_kv.cpp
+shm_unlink.cpp
+test.cpp

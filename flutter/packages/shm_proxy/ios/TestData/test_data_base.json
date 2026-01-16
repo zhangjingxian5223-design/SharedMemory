@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "ShmProxy Benchmark Test Data",
+    "generated_at": "2026-01-06"
+  },
+  "basic_types": {
+    "string_field": "Hello World",
+    "int_field": 12345,
+    "float_field": 3.14159265358979,
+    "bool_true": true,
+    "bool_false": false,
+    "null_field": null,
+    "empty_string": "",
+    "chinese_string": "中文测试字符串",
+    "emoji_string": "🎵🎶🎸",
+    "long_string": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
+    "negative_int": -9876,
+    "large_int": 9007199254740991,
+    "small_float": 0.000001,
+    "negative_float": -273.15
+  },
+  "nested_object": {
+    "level1": {
+      "level2": {
+        "level3": {
+          "deep_string": "deeply nested value",
+          "deep_number": 42,
+          "deep_array": [1, 2, 3]
+        }
+      },
+      "sibling": "sibling value"
+    }
+  },
+  "arrays": {
+    "int_array": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "float_array": [1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 10.0],
+    "string_array": ["apple", "banana", "cherry", "date", "elderberry"],
+    "bool_array": [true, false, true, false, true],
+    "mixed_array": [1, "two", 3.0, true, null, {"nested": "object"}, [1, 2, 3]],
+    "empty_array": [],
+    "object_array": [
+      {"id": 1, "name": "first", "active": true},
+      {"id": 2, "name": "second", "active": false},
+      {"id": 3, "name": "third", "active": true}
+    ]
+  },
+  "song": {
+    "song_id": "TRAAABD128F429CF47",
+    "title": "Soul Deep",
+    "artist_name": "The Box Tops",
+    "album": "Dimensions",
+    "year": 1969,
+    "duration_ms": 215000,
+    "explicit": false,
+    "popularity": 45,
+    "genres": ["blue-eyed soul", "pop rock", "blues-rock"],
+    "analysis": {
+      "tempo": 120.5,
+      "key": 5,
+      "mode": 1,
+      "time_signature": 4,
+      "loudness": -5.2,
+      "segments": []
+    }
+  }
+}
