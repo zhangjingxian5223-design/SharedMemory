@@ -1,0 +1,54 @@
+{
+  "name": "react-native-shmproxy",
+  "version": "1.0.0",
+  "description": "High-performance React Native data transfer using Shared Memory",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "react-native",
+    "shared-memory",
+    "performance",
+    "jsi",
+    "ios",
+    "data-transfer",
+    "optimization"
+  ],
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.60.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-native": "^0.72.0",
+    "typescript": "^5.0.0"
+  },
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/react-native-shmproxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/react-native-shmproxy/issues"
+  },
+  "homepage": "https://github.com/yourusername/react-native-shmproxy#readme",
+  "files": [
+    "src",
+    "ios",
+    "android",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "react-native": "src/index.ts",
+  "codegenConfig": {
+    "name": "RNShmProxySpec",
+    "type": "modules",
+    "jsSrcsDir": "src"
+  }
+}
