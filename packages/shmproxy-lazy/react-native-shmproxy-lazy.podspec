@@ -34,10 +34,9 @@ Pod::Spec.new do |s|
 
   # Native module dependencies
   s.dependency 'React-Core'
-  s.dependency 'React-RCTBridge'
   s.dependency 'React-jsi'
-  s.dependency 'React-RCTAPI'
   s.dependency 'react-native-shmproxy'
+  s.dependency 'OpenSSL-Universal'
 
   # Source files
   s.source_files = 'ios/ShmProxyLazy/**/*.{h,mm,cpp}'
@@ -48,6 +47,7 @@ Pod::Spec.new do |s|
       '"$(PODS_TARGET_SRCROOT)"',
       '"$(PODS_ROOT)/React-Core/ReactCommon/jsi"',
       '"$(PODS_ROOT)/react-native-shmproxy/ios/ShmProxy"',
+      '"$(PODS_ROOT)/OpenSSL-Universal/include"',
     ],
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',

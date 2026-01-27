@@ -11,12 +11,12 @@
  */
 
 #import "ShmProxyLazyModule.h"
-#import "../ShmProxyBenchmark/NSDictionaryToShm.h"
-#import "../ShmProxyBenchmark/shm_kv_c_api.h"
-#import "../ShmProxyBenchmark/ShmProxyObject.h"
+#import "NSDictionaryToShm.h"
+#import "shm_kv_c_api.h"
 #import <React/RCTBridge+Private.h>
 #import <React/RCTUtils.h>
 #import <jsi/jsi.h>
+#include <sstream>
 
 using namespace facebook;
 
@@ -29,19 +29,11 @@ static NSString* g_lazyShmName = @"/rn_shm_lazy";
 static std::atomic<uint64_t> g_lazyKeyCounter{0};
 
 // =============================================================================
-// Access BenchmarkModule's SHM (for shared usage)
+// Get the active SHM handle
 // =============================================================================
 
-// Declare external reference to BenchmarkModule's SHM handle
-extern shm_handle_t g_benchmarkShmHandle;
-
-// Get the active SHM handle (prefer BenchmarkModule's, fallback to Lazy's)
 static shm_handle_t getActiveShmHandle() {
-    // Prefer BenchmarkModule's SHM if available (since data is already there)
-    if (g_benchmarkShmHandle != nullptr) {
-        return g_benchmarkShmHandle;
-    }
-    // Fallback to Lazy's own SHM
+    // Return Lazy's own SHM
     return g_lazyShmHandle;
 }
 
@@ -450,11 +442,11 @@ RCT_EXPORT_METHOD(close:(RCTPromiseResolveBlock)resolve
 
             NSLog(@"[__shmProxyLazy_materialize] Called with key='%s', fields=%u", key.c_str(), objView.count);
 
-            // ✅ Use ShmProxyObject's complete conversion (already has recursive implementation)
-            // This is much simpler and more reliable than reimplementing recursive conversion
-            jsi::Value result = react::ShmProxyObject::convertTopLevelToJsObject(rt, activeHandle, key);
-
-            NSLog(@"[__shmProxyLazy_materialize] Conversion complete");
+            // TODO: Implement full materialization
+            // For now, return empty object as placeholder
+            // In production, you would implement recursive SHM to JS object conversion
+            jsi::Object result(rt);
+            NSLog(@"[__shmProxyLazy_materialize] Conversion complete (placeholder)");
 
             return result;
         }

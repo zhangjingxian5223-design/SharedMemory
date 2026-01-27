@@ -1,0 +1,27 @@
+{
+  "name": "shmproxy-workspace",
+  "version": "1.0.0",
+  "description": "ShmProxy - High-performance data transfer for React Native",
+  "private": true,
+  "scripts": {
+    "test": "echo \"Error: Run tests in individual packages\"",
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf node_modules"
+  },
+  "workspaces": [
+    "packages/shmproxy",
+    "packages/shmproxy-lazy"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhangjingxian5223-design/SharedMemory.git"
+  },
+  "author": "Zhang Jingxian",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-native": "^0.72.0",
+    "typescript": "^5.0.0"
+  }
+}

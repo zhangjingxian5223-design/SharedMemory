@@ -2,7 +2,7 @@
   "name": "react-native-shmproxy-lazy",
   "version": "1.0.0",
   "description": "Lazy-loading data transfer using ES6 Proxy and Shared Memory for React Native",
-  "main": "src/index.ts",
+  "main": "src/index.js",
   "types": "src/index.ts",
   "scripts": {
     "test": "jest",
@@ -50,7 +50,7 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "react-native": "src/index.ts",
+  "react-native": "src/index.js",
   "codegenConfig": {
     "name": "RNShmProxyLazySpec",
     "type": "modules",

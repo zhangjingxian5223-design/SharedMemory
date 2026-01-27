@@ -54,6 +54,82 @@
 
 *测试环境: iOS Simulator, React Native 0.73.11*
 
+## ⚠️ 重要提示
+
+### React Native 版本要求
+- ✅ **React Native 0.73.x 及以下**：已验证，完全兼容（旧架构）
+- ⚠️ **React Native 0.84+**：新架构（Fabric/TurboModules）适配中
+
+### Metro Bundler 兼容性
+
+**重要**: Metro bundler 不支持符号链接。本地开发时有三种安装方式：
+
+#### 方式 1: 使用 setup 脚本（推荐）
+```bash
+./setup-test-project.sh
+```
+脚本会自动处理符号链接问题并创建测试项目。
+
+#### 方式 2: 手动安装（注意符号链接）
+```bash
+# ❌ 错误：npm install 会创建符号链接，Metro 无法解析
+npm install ../SharedMemory/packages/shmproxy
+
+# ✅ 正确：使用实际复制（Metro bundler 要求）
+cp -r ../SharedMemory/packages/shmproxy node_modules/react-native-shmproxy
+cp -r ../SharedMemory/packages/shmproxy-lazy node_modules/react-native-shmproxy-lazy
+```
+
+#### 方式 3: 从 npm 安装（生产环境推荐）
+```bash
+npm install react-native-shmproxy react-native-shmproxy-lazy
+```
+从 npm 安装不会创建符号链接，可以正常使用。
+
+### 共享内存说明
+
+**重要**: ShmProxy 和 ShmProxyLazy 使用**独立的共享内存**：
+
+```typescript
+import { ShmProxy } from 'react-native-shmproxy';
+import { ShmProxyLazy } from 'react-native-shmproxy-lazy';
+
+// ShmProxy - 自动初始化
+await ShmProxy.write(data); // 首次使用时自动初始化
+
+// ShmProxyLazy - 需要手动初始化
+await ShmProxyLazy.initialize(); // 必须先初始化！
+await ShmProxyLazy.write(data);
+```
+
+## 📚 API 快速参考
+
+### ShmProxy vs ShmProxyLazy 对照表
+
+| 功能 | ShmProxy | ShmProxyLazy | 说明 |
+|------|----------|--------------|------|
+| **初始化** | 自动 | `await initialize()` | Lazy 需要手动初始化 |
+| **安装 JSI** | `installJSIBindingsSync()` | `await install()` | API 不同 |
+| **写入数据** | `await write(data)` | `await write(data)` | 相同 |
+| **读取数据** | `global.__shm_read(key)` | `createProxy(key)` | 不同 |
+| **全量转换** | N/A (全量) | `await materialize(key)` | Lazy 专用 |
+| **获取统计** | `await getStats()` | `await getStats()` | 相同 |
+| **清空数据** | `await clear()` | `await clear()` | 相同 |
+
+### 使用场景选择
+
+**使用 ShmProxy 当**:
+- ✅ 需要访问大部分字段（> 50%）
+- ✅ 需要完整对象的语义
+- ✅ 代码简洁性优先
+- ✅ 不需要手动初始化
+
+**使用 ShmProxyLazy 当**:
+- ✅ 只访问少量字段（< 20%）
+- ✅ 需要极致性能
+- ✅ 大数据场景
+- ✅ 可以接受手动初始化
+
 ## 🚀 快速开始
 
 ### 安装

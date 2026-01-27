@@ -32,9 +32,7 @@ Pod::Spec.new do |s|
 
   # Native module dependencies
   s.dependency 'React-Core'
-  s.dependency 'React-RCTBridge'
   s.dependency 'React-jsi'
-  s.dependency 'React-RCTAPI'
 
   # Source files
   s.source_files = 'ios/ShmProxy/**/*.{h,mm,cpp}'
